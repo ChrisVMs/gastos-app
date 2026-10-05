@@ -37,19 +37,38 @@ export interface Debt {
   userId: string;
   name: string;
   description: string;
+  /** Saldo capital tomado de la deuda. */
   capitalAmount: number;
+  /** Número de cuotas en las que se proyecta la deuda. */
+  cuotas: number;
+  /** Importe de cada cuota. */
+  cuotaAmount: number;
+  /** Categoría fija "Deuda". */
   categoryId: number;
   paymentMethod: PaymentMethod;
+  /** Fecha de la primera cuota. */
   date: string;
-  transactionId: number | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type DebtInput = Omit<
   Debt,
-  "id" | "userId" | "transactionId" | "createdAt" | "updatedAt"
+  "id" | "userId" | "categoryId" | "createdAt" | "updatedAt"
 >;
+
+export interface DebtInstallment {
+  id: number;
+  userId: string;
+  debtId: number;
+  /** Número de cuota (1..cuotas). */
+  number: number;
+  amount: number;
+  date: string;
+  /** Egreso generado por la cuota (no editable). */
+  transactionId: number | null;
+  createdAt: string;
+}
 
 export interface Goal {
   id: number;

@@ -5,12 +5,14 @@
  */
 
 import { supabase } from "@/lib/supabase/client";
-import { INITIAL_CATEGORIES } from "@/lib/constants";
+import { DEBT_CATEGORY_NAME, INITIAL_CATEGORIES } from "@/lib/constants";
+import { buildDebtSchedule } from "@/lib/debts";
 import { notifyDataChanged } from "@/lib/refresh";
 import type {
   Category,
   Debt,
   DebtInput,
+  DebtInstallment,
   Goal,
   GoalInput,
   PaymentMethod,
@@ -49,12 +51,24 @@ interface DebtRow {
   name: string;
   description: string;
   capital_amount: number;
+  cuotas: number;
+  cuota_amount: number;
   category_id: number;
   payment_method: string;
   date: string;
-  transaction_id: number | null;
   created_at: string;
   updated_at: string;
+}
+
+interface DebtInstallmentRow {
+  id: number;
+  user_id: string;
+  debt_id: number;
+  number: number;
+  amount: number;
+  date: string;
+  transaction_id: number | null;
+  created_at: string;
 }
 
 interface GoalRow {
@@ -104,12 +118,26 @@ function toDebt(row: DebtRow): Debt {
     name: row.name,
     description: row.description,
     capitalAmount: row.capital_amount,
+    cuotas: row.cuotas,
+    cuotaAmount: row.cuota_amount,
     categoryId: row.category_id,
     paymentMethod: row.payment_method as PaymentMethod,
     date: row.date,
-    transactionId: row.transaction_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function toDebtInstallment(row: DebtInstallmentRow): DebtInstallment {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    debtId: row.debt_id,
+    number: row.number,
+    amount: row.amount,
+    date: row.date,
+    transactionId: row.transaction_id ?? null,
+    createdAt: row.created_at,
   };
 }
 
@@ -138,6 +166,27 @@ function dropLegacyLocalDatabase(): void {
   }
 }
 
+/** Devuelve el id de la categoría de gasto "Deuda", creándola si el usuario aún no la tiene. */
+async function ensureDebtCategory(): Promise<number> {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id")
+    .ilike("name", DEBT_CATEGORY_NAME)
+    .eq("type", "expense")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (data) return data.id as number;
+
+  const { error: insertError, data: row } = await supabase
+    .from("categories")
+    .insert({ name: DEBT_CATEGORY_NAME, type: "expense", icon: "landmark" })
+    .select("id")
+    .single();
+  if (insertError) throw new Error(insertError.message);
+  return row.id;
+}
+
 /** Crea las categorías iniciales del usuario solo si aún no tiene ninguna. */
 export async function ensureInitialCategories(): Promise<void> {
   if (seeding) return;
@@ -154,6 +203,7 @@ export async function ensureInitialCategories(): Promise<void> {
         .insert(INITIAL_CATEGORIES.map((c) => ({ name: c.name, type: c.type })));
       if (insertError) throw new Error(insertError.message);
     }
+    await ensureDebtCategory();
     dropLegacyLocalDatabase();
   } finally {
     seeding = false;
@@ -259,12 +309,19 @@ async function findDebtByTransaction(
   transactionId: number
 ): Promise<Debt | null> {
   const { data, error } = await supabase
-    .from("debts")
-    .select("*")
+    .from("debt_installments")
+    .select("debt_id")
     .eq("transaction_id", transactionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data ? toDebt(data as DebtRow) : null;
+  if (!data) return null;
+  const { data: debt, error: debtError } = await supabase
+    .from("debts")
+    .select("*")
+    .eq("id", data.debt_id)
+    .single();
+  if (debtError) throw new Error(debtError.message);
+  return toDebt(debt as DebtRow);
 }
 
 export async function addTransaction(data: TransactionInput): Promise<number> {
@@ -321,53 +378,109 @@ export async function getDebts(): Promise<Debt[]> {
   return (data ?? []).map((row) => toDebt(row as DebtRow));
 }
 
-export async function addDebt(data: DebtInput): Promise<number> {
-  const transactionId = await insertTransaction({
-    type: "expense",
-    amount: data.capitalAmount,
-    categoryId: data.categoryId,
-    description: data.description || data.name,
-    date: data.date,
-    paymentMethod: data.paymentMethod,
-  });
+export async function getDebtInstallments(): Promise<DebtInstallment[]> {
+  const { data, error } = await supabase
+    .from("debt_installments")
+    .select("*")
+    .order("date", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => toDebtInstallment(row as DebtInstallmentRow));
+}
 
-  const { error, data: row } = await supabase
+/**
+ * Registra una deuda y proyecta sus cuotas: crea un egreso por mes
+ * (desde la fecha de la deuda) en la categoría fija "Deuda".
+ */
+export async function addDebt(data: DebtInput): Promise<number> {
+  const categoryId = await ensureDebtCategory();
+  const schedule = buildDebtSchedule(data.date, data.cuotas, data.cuotaAmount);
+  if (schedule.length === 0) throw new Error("La deuda debe tener al menos una cuota.");
+
+  const { error: debtError, data: debtRow } = await supabase
     .from("debts")
     .insert({
       name: data.name,
       description: data.description,
       capital_amount: data.capitalAmount,
-      category_id: data.categoryId,
+      cuotas: data.cuotas,
+      cuota_amount: data.cuotaAmount,
+      category_id: categoryId,
       payment_method: data.paymentMethod,
       date: data.date,
-      transaction_id: transactionId,
     })
     .select("id")
     .single();
-  if (error) {
-    await supabase.from("transactions").delete().eq("id", transactionId);
-    throw new Error(error.message);
+  if (debtError) throw new Error(debtError.message);
+  const debtId = debtRow.id;
+
+  const { error: transactionError, data: transactions } = await supabase
+    .from("transactions")
+    .insert(
+      schedule.map((installment) => ({
+        type: "expense",
+        amount: installment.amount,
+        category_id: categoryId,
+        description: `${data.name} · cuota ${installment.number}/${data.cuotas}`,
+        date: installment.date,
+        payment_method: data.paymentMethod,
+      }))
+    )
+    .select("id, date");
+  if (transactionError) {
+    await supabase.from("debts").delete().eq("id", debtId);
+    throw new Error(transactionError.message);
   }
+
+  const transactionIdByDate = new Map(
+    (transactions ?? []).map((row) => [row.date as string, row.id as number])
+  );
+  const { error: installmentError } = await supabase
+    .from("debt_installments")
+    .insert(
+      schedule.map((installment) => ({
+        debt_id: debtId,
+        number: installment.number,
+        amount: installment.amount,
+        date: installment.date,
+        transaction_id: transactionIdByDate.get(installment.date) ?? null,
+      }))
+    );
+  if (installmentError) {
+    const ids = [...transactionIdByDate.values()];
+    if (ids.length > 0) {
+      await supabase.from("transactions").delete().in("id", ids);
+    }
+    await supabase.from("debts").delete().eq("id", debtId);
+    throw new Error(installmentError.message);
+  }
+
   notifyDataChanged();
-  return row.id;
+  return debtId;
 }
 
 export async function deleteDebt(id: number): Promise<void> {
   const { data, error: selectError } = await supabase
-    .from("debts")
+    .from("debt_installments")
     .select("transaction_id")
-    .eq("id", id)
-    .single();
+    .eq("debt_id", id);
   if (selectError) throw new Error(selectError.message);
 
-  const transactionId = data?.transaction_id ?? null;
-  if (transactionId) {
+  const transactionIds = (data ?? [])
+    .map((row) => row.transaction_id as number | null)
+    .filter((transactionId): transactionId is number => transactionId !== null);
+  if (transactionIds.length > 0) {
     const { error: transactionError } = await supabase
       .from("transactions")
       .delete()
-      .eq("id", transactionId);
+      .in("id", transactionIds);
     if (transactionError) throw new Error(transactionError.message);
   }
+
+  const { error: installmentError } = await supabase
+    .from("debt_installments")
+    .delete()
+    .eq("debt_id", id);
+  if (installmentError) throw new Error(installmentError.message);
 
   const { error } = await supabase.from("debts").delete().eq("id", id);
   if (error) throw new Error(error.message);

@@ -4,36 +4,56 @@ import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
-import { getCategories, getDebts, getGoals, getTransactions } from "@/lib/db";
+import {
+  getCategories,
+  getDebts,
+  getDebtInstallments,
+  getGoals,
+  getTransactions,
+} from "@/lib/db";
 import { subscribe } from "@/lib/refresh";
-import type { Category, Debt, Goal, Transaction } from "@/lib/types";
+import type { Category, Debt, DebtInstallment, Goal, Transaction } from "@/lib/types";
 
 export interface AppData {
   transactions: Transaction[];
   categories: Category[];
   goals: Goal[];
   debts: Debt[];
+  debtInstallments: DebtInstallment[];
 }
 
 export { notifyDataChanged } from "@/lib/refresh";
 
-async function fetchDebts(): Promise<Debt[]> {
+async function fetchDebts(): Promise<{
+  debts: Debt[];
+  debtInstallments: DebtInstallment[];
+}> {
   try {
-    return await getDebts();
+    const [debts, debtInstallments] = await Promise.all([
+      getDebts(),
+      getDebtInstallments(),
+    ]);
+    return { debts, debtInstallments };
   } catch {
-    return [];
+    return { debts: [], debtInstallments: [] };
   }
 }
 
 async function fetchData(): Promise<AppData> {
-  const [transactions, categories, goals, debts] = await Promise.all([
+  const [transactions, categories, goals, debtData] = await Promise.all([
     getTransactions(),
     getCategories(),
     getGoals(),
     fetchDebts(),
   ]);
 
-  return { transactions, categories, goals, debts };
+  return {
+    transactions,
+    categories,
+    goals,
+    debts: debtData.debts,
+    debtInstallments: debtData.debtInstallments,
+  };
 }
 
 export interface UserState {

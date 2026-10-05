@@ -49,7 +49,7 @@ import { deleteTransaction } from "@/lib/db";
 import { useData } from "@/lib/data";
 import { PAYMENT_METHOD_LABELS, TYPE_LABELS } from "@/lib/constants";
 import { formatCurrency, formatDate } from "@/lib/format";
-import type { Debt, Transaction, TransactionType } from "@/lib/types";
+import type { Transaction, TransactionType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TYPE_FILTERS: { value: "all" | TransactionType; label: string }[] = [
@@ -58,9 +58,9 @@ const TYPE_FILTERS: { value: "all" | TransactionType; label: string }[] = [
   { value: "income", label: "Ingresos" },
 ];
 
-function debtLockTitle(debtName?: string): string {
-  return debtName
-    ? `Egreso de la deuda "${debtName}": no se edita ni se elimina aquí, solo desde la sección Deudas.`
+function debtLockTitle(debtLabel?: string): string {
+  return debtLabel
+    ? `Cuota de la deuda "${debtLabel}": no se edita ni se elimina aquí, solo desde la sección Deudas.`
     : "Este movimiento no se edita ni se elimina aquí, solo desde la sección Deudas.";
 }
 
@@ -79,27 +79,35 @@ export default function MovementsPage() {
   const transactions = data?.transactions;
   const categories = data?.categories;
 
-  const debtTransactionIds = useMemo(
-    () =>
-      new Set(
-        (data?.debts ?? [])
-          .map((d) => d.transactionId)
-          .filter((id): id is number => id !== null)
-      ),
+  const debtById = useMemo(
+    () => new Map((data?.debts ?? []).map((d) => [d.id, d])),
     [data?.debts]
   );
 
-  const debtNamesByTransactionId = useMemo(
+  const debtTransactionIds = useMemo(
     () =>
-      new Map(
-        (data?.debts ?? [])
-          .filter((d): d is Debt & { transactionId: number } =>
-            d.transactionId !== null
-          )
-          .map((d) => [d.transactionId, d.name])
+      new Set(
+        (data?.debtInstallments ?? [])
+          .map((i) => i.transactionId)
+          .filter((id): id is number => id !== null)
       ),
-    [data?.debts]
+    [data?.debtInstallments]
   );
+
+  const debtNamesByTransactionId = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const installment of data?.debtInstallments ?? []) {
+      if (installment.transactionId === null) continue;
+      const debt = debtById.get(installment.debtId);
+      if (!debt) continue;
+      const current = map.get(installment.transactionId);
+      map.set(
+        installment.transactionId,
+        current ? `${current} · cuota ${installment.number}` : `${debt.name} · cuota ${installment.number}`
+      );
+    }
+    return map;
+  }, [data?.debtInstallments, debtById]);
 
   const filtered = useMemo(() => {
     return (transactions ?? []).filter((t) => {

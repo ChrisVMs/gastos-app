@@ -3,7 +3,10 @@
 -- Ejecutar en el editor SQL del proyecto Supabase.
 --
 -- Orden: requiere 001_categories.sql y 002_transactions.sql
---        (cada deuda genera un egreso enlazado en transaction_id)
+--
+-- IMPORTANTE: si ya habías creado `debts` con la versión anterior
+-- de este script (sin cuotas), ejecuta antes:
+--   drop table if exists public.debts cascade;
 --
 -- Es idempotente: puede ejecutarse las veces que sea.
 -- ==========================================================
@@ -25,17 +28,17 @@ create table if not exists public.debts (
   name text not null,
   description text not null default '',
   capital_amount double precision not null check (capital_amount > 0),
+  cuotas integer not null check (cuotas > 0),
+  cuota_amount double precision not null check (cuota_amount > 0),
   category_id bigint not null references public.categories (id) on delete restrict,
   payment_method text not null default 'efectivo',
   date date not null default current_date,
-  transaction_id bigint references public.transactions (id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists debts_user_id_idx on public.debts (user_id);
 create index if not exists debts_user_id_date_idx on public.debts (user_id, date);
-create unique index if not exists debts_transaction_id_idx on public.debts (transaction_id);
 
 alter table public.debts enable row level security;
 

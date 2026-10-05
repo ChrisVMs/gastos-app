@@ -2,6 +2,8 @@ import type { PaymentMethod, TransactionType } from "@/lib/types";
 
 export const CURRENCY = "PEN";
 
+export const DEBT_CATEGORY_NAME = "Deuda";
+
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "efectivo", label: "Efectivo" },
   { value: "tarjeta_debito", label: "Tarjeta de débito" },

@@ -27,6 +27,21 @@ export function currentMonth(): string {
   return toMonthString(new Date());
 }
 
+/** Suma `delta` meses a una fecha "YYYY-MM-DD" conservando el día (limitado al último día del mes). */
+export function addMonths(isoDate: string, delta: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) return isoDate;
+  const target = new Date(year, month - 1 + delta, 1);
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0
+  ).getDate();
+  return toDateString(
+    new Date(target.getFullYear(), target.getMonth(), Math.min(day, lastDay))
+  );
+}
+
 /** "2026-03-12" -> "12 mar 2026" */
 export function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);

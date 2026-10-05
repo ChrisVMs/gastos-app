@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Landmark, Lock, Plus, Trash2 } from "lucide-react";
+import { Landmark, Lock, Percent, Plus, Trash2, Wallet } from "lucide-react";
 
 import { DebtFormDialog } from "@/components/debt-form-dialog";
 import { EmptyState } from "@/components/empty-state";
@@ -20,30 +20,55 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DEBT_CATEGORY_NAME, PAYMENT_METHOD_LABELS } from "@/lib/constants";
 import { deleteDebt } from "@/lib/db";
+import { debtInterest, debtTotalCost, isProjectedInstallment } from "@/lib/debts";
 import { useData } from "@/lib/data";
-import { PAYMENT_METHOD_LABELS } from "@/lib/constants";
-import { formatCurrency, formatDate } from "@/lib/format";
-import type { Debt } from "@/lib/types";
+import { formatCurrency, formatDate, toDateString } from "@/lib/format";
+import type { Debt, DebtInstallment } from "@/lib/types";
 
 export default function DebtsPage() {
   const data = useData();
   const debts = data?.debts;
-  const categories = data?.categories;
+  const installments = data?.debtInstallments;
 
   const [formOpen, setFormOpen] = useState(false);
   const [deleting, setDeleting] = useState<Debt | null>(null);
   const [deletingError, setDeletingError] = useState("");
 
-  const categoryById = useMemo(
-    () => new Map((categories ?? []).map((c) => [c.id, c])),
-    [categories]
-  );
+  const today = toDateString(new Date());
 
-  const totalCapital = useMemo(
-    () => (debts ?? []).reduce((acc, d) => acc + d.capitalAmount, 0),
-    [debts]
-  );
+  const totals = useMemo(() => {
+    return (debts ?? []).reduce(
+      (acc, debt) => ({
+        capital: acc.capital + debt.capitalAmount,
+        cost: acc.cost + debtTotalCost(debt),
+        interest: acc.interest + debtInterest(debt),
+      }),
+      { capital: 0, cost: 0, interest: 0 }
+    );
+  }, [debts]);
+
+  const schedule = useMemo(() => {
+    const debtById = new Map((debts ?? []).map((d) => [d.id, d]));
+    return (installments ?? [])
+      .map((installment) => ({
+        installment,
+        debt: debtById.get(installment.debtId),
+      }))
+      .filter((row): row is { installment: DebtInstallment; debt: Debt } =>
+        Boolean(row.debt)
+      )
+      .sort((a, b) => a.installment.date.localeCompare(b.installment.date));
+  }, [debts, installments]);
 
   const handleDelete = async () => {
     if (!deleting?.id) return;
@@ -59,6 +84,7 @@ export default function DebtsPage() {
   };
 
   const loading = debts === undefined;
+  const deletingCost = deleting ? debtTotalCost(deleting) : 0;
 
   return (
     <div className="space-y-6">
@@ -66,8 +92,8 @@ export default function DebtsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Deudas</h1>
           <p className="text-sm text-muted-foreground">
-            Registra tus deudas frecuentes y su saldo capital. Cada deuda suma un
-            egreso a tus reportes y solo se elimina desde aquí.
+            Registra tus deudas frecuentes y su saldo capital. Cada cuota suma un
+            egreso a los reportes de su mes y solo se elimina desde aquí.
           </p>
         </div>
         <Button onClick={() => setFormOpen(true)}>
@@ -76,12 +102,13 @@ export default function DebtsPage() {
       </div>
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
       ) : debts.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <StatCard
             label="Deudas registradas"
             value={String(debts.length)}
@@ -89,8 +116,13 @@ export default function DebtsPage() {
           />
           <StatCard
             label="Saldo capital total"
-            value={formatCurrency(totalCapital)}
-            icon={Landmark}
+            value={formatCurrency(totals.capital)}
+            icon={Wallet}
+          />
+          <StatCard
+            label="Interés total a pagar"
+            value={formatCurrency(totals.interest)}
+            icon={Percent}
             iconClassName="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
           />
         </div>
@@ -98,15 +130,15 @@ export default function DebtsPage() {
 
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Skeleton className="h-48" />
-          <Skeleton className="h-48" />
-          <Skeleton className="h-48" />
+          <Skeleton className="h-52" />
+          <Skeleton className="h-52" />
+          <Skeleton className="h-52" />
         </div>
       ) : debts.length === 0 ? (
         <EmptyState
           icon={Landmark}
           title="Aún no tienes deudas"
-          description="Agrega una deuda como la bancaria con su saldo capital y se sumará como egreso en tu reporte."
+          description={`Agrega una deuda como la bancaria con su saldo capital y sus cuotas; cada cuota se sumará como egreso en la categoría ${DEBT_CATEGORY_NAME}.`}
           action={
             <Button onClick={() => setFormOpen(true)}>
               <Plus /> Registrar deuda
@@ -116,7 +148,11 @@ export default function DebtsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {debts.map((debt) => {
-            const category = categoryById.get(debt.categoryId);
+            const debtSchedule = schedule.filter(
+              (row) => row.debt.id === debt.id
+            );
+            const last = debtSchedule[debtSchedule.length - 1];
+            const interest = debtInterest(debt);
             return (
               <Card key={debt.id}>
                 <CardContent className="flex h-full flex-col gap-4 p-5">
@@ -160,23 +196,53 @@ export default function DebtsPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Fecha</p>
-                      <p className="font-semibold">{formatDate(debt.date)}</p>
+                      <p className="text-xs text-muted-foreground">Cuota</p>
+                      <p className="font-semibold">
+                        {formatCurrency(debt.cuotaAmount)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Total a pagar
+                      </p>
+                      <p className="font-semibold">
+                        {formatCurrency(debtTotalCost(debt))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Interés</p>
+                      <p
+                        className={
+                          interest > 0
+                            ? "font-semibold text-red-600 dark:text-red-400"
+                            : "font-semibold text-emerald-600 dark:text-emerald-400"
+                        }
+                      >
+                        {formatCurrency(interest)}
+                      </p>
                     </div>
                   </div>
 
                   <div className="mt-auto space-y-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Badge variant="secondary">
-                        {category?.name ?? "Sin categoría"}
+                        {debt.cuotas}{" "}
+                        {debt.cuotas === 1 ? "cuota" : "cuotas"}
+                      </Badge>
+                      <Badge variant="outline">
+                        {DEBT_CATEGORY_NAME}
                       </Badge>
                       <Badge variant="outline">
                         {PAYMENT_METHOD_LABELS[debt.paymentMethod]}
                       </Badge>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(debt.date)} →{" "}
+                      {last ? formatDate(last.installment.date) : "-"}
+                    </p>
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Lock className="h-3.5 w-3.5 shrink-0" />
-                      Egreso registrado sin edición
+                      Cuotas registradas sin edición
                     </p>
                   </div>
                 </CardContent>
@@ -185,6 +251,52 @@ export default function DebtsPage() {
           })}
         </div>
       )}
+
+      {!loading && schedule.length > 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <div className="border-b px-4 py-3">
+              <h2 className="text-sm font-semibold">Cronograma de cuotas</h2>
+              <p className="text-xs text-muted-foreground">
+                Proyección mes a mes: cada cuota ya está registrada como egreso
+                en su mes.
+              </p>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Deuda</TableHead>
+                  <TableHead>Cuota</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Importe</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {schedule.map(({ installment, debt }) => (
+                  <TableRow key={installment.id}>
+                    <TableCell className="font-medium">{debt.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {installment.number}/{debt.cuotas}
+                    </TableCell>
+                    <TableCell>{formatDate(installment.date)}</TableCell>
+                    <TableCell>
+                      {isProjectedInstallment(installment, today) ? (
+                        <Badge variant="outline">Proyectada</Badge>
+                      ) : (
+                        <Badge variant="expense">Registrada</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold text-red-600 dark:text-red-400">
+                      -{formatCurrency(installment.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <DebtFormDialog open={formOpen} onOpenChange={setFormOpen} />
 
@@ -198,9 +310,9 @@ export default function DebtsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar deuda?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará el egreso de {formatCurrency(deleting?.capitalAmount ?? 0)}{" "}
-              asociado y desaparecerá de tus reportes. Esta acción no se puede
-              deshacer.
+              Se eliminarán sus {deleting?.cuotas ?? 0} cuotas (
+              {formatCurrency(deletingCost)}) y desaparecerán de tus
+              reportes. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deletingError ? (
