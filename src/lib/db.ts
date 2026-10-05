@@ -9,6 +9,8 @@ import { INITIAL_CATEGORIES } from "@/lib/constants";
 import { notifyDataChanged } from "@/lib/refresh";
 import type {
   Category,
+  Debt,
+  DebtInput,
   Goal,
   GoalInput,
   PaymentMethod,
@@ -37,6 +39,20 @@ interface CategoryRow {
   name: string;
   icon: string;
   type: TransactionType;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DebtRow {
+  id: number;
+  user_id: string;
+  name: string;
+  description: string;
+  capital_amount: number;
+  category_id: number;
+  payment_method: string;
+  date: string;
+  transaction_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +92,22 @@ function toCategory(row: CategoryRow): Category {
     name: row.name,
     icon: row.icon,
     type: row.type,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toDebt(row: DebtRow): Debt {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    description: row.description,
+    capitalAmount: row.capital_amount,
+    categoryId: row.category_id,
+    paymentMethod: row.payment_method as PaymentMethod,
+    date: row.date,
+    transactionId: row.transaction_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -206,7 +238,7 @@ export async function getTransactions(): Promise<Transaction[]> {
   return (data ?? []).map((row) => toTransaction(row as TransactionRow));
 }
 
-export async function addTransaction(data: TransactionInput): Promise<number> {
+async function insertTransaction(data: TransactionInput): Promise<number> {
   const { error, data: row } = await supabase
     .from("transactions")
     .insert({
@@ -220,14 +252,37 @@ export async function addTransaction(data: TransactionInput): Promise<number> {
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  notifyDataChanged();
   return row.id;
+}
+
+async function findDebtByTransaction(
+  transactionId: number
+): Promise<Debt | null> {
+  const { data, error } = await supabase
+    .from("debts")
+    .select("*")
+    .eq("transaction_id", transactionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? toDebt(data as DebtRow) : null;
+}
+
+export async function addTransaction(data: TransactionInput): Promise<number> {
+  const id = await insertTransaction(data);
+  notifyDataChanged();
+  return id;
 }
 
 export async function updateTransaction(
   id: number,
   data: Partial<TransactionInput>
 ): Promise<void> {
+  const debt = await findDebtByTransaction(id);
+  if (debt) {
+    throw new Error(
+      `El movimiento de "${debt.name}" no se puede editar. Gestiona la deuda desde la sección Deudas.`
+    );
+  }
   const patch: Record<string, unknown> = {};
   if (data.type !== undefined) patch.type = data.type;
   if (data.amount !== undefined) patch.amount = data.amount;
@@ -244,7 +299,77 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(id: number): Promise<void> {
+  const debt = await findDebtByTransaction(id);
+  if (debt) {
+    throw new Error(
+      `El movimiento de "${debt.name}" no se puede eliminar aquí. Elimínalo desde la sección Deudas.`
+    );
+  }
   const { error } = await supabase.from("transactions").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  notifyDataChanged();
+}
+
+// --- Deudas ---
+
+export async function getDebts(): Promise<Debt[]> {
+  const { data, error } = await supabase
+    .from("debts")
+    .select("*")
+    .order("date", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => toDebt(row as DebtRow));
+}
+
+export async function addDebt(data: DebtInput): Promise<number> {
+  const transactionId = await insertTransaction({
+    type: "expense",
+    amount: data.capitalAmount,
+    categoryId: data.categoryId,
+    description: data.description || data.name,
+    date: data.date,
+    paymentMethod: data.paymentMethod,
+  });
+
+  const { error, data: row } = await supabase
+    .from("debts")
+    .insert({
+      name: data.name,
+      description: data.description,
+      capital_amount: data.capitalAmount,
+      category_id: data.categoryId,
+      payment_method: data.paymentMethod,
+      date: data.date,
+      transaction_id: transactionId,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    await supabase.from("transactions").delete().eq("id", transactionId);
+    throw new Error(error.message);
+  }
+  notifyDataChanged();
+  return row.id;
+}
+
+export async function deleteDebt(id: number): Promise<void> {
+  const { data, error: selectError } = await supabase
+    .from("debts")
+    .select("transaction_id")
+    .eq("id", id)
+    .single();
+  if (selectError) throw new Error(selectError.message);
+
+  const transactionId = data?.transaction_id ?? null;
+  if (transactionId) {
+    const { error: transactionError } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", transactionId);
+    if (transactionError) throw new Error(transactionError.message);
+  }
+
+  const { error } = await supabase.from("debts").delete().eq("id", id);
   if (error) throw new Error(error.message);
   notifyDataChanged();
 }

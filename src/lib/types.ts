@@ -32,6 +32,25 @@ export interface Category {
   updatedAt: string;
 }
 
+export interface Debt {
+  id: number;
+  userId: string;
+  name: string;
+  description: string;
+  capitalAmount: number;
+  categoryId: number;
+  paymentMethod: PaymentMethod;
+  date: string;
+  transactionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DebtInput = Omit<
+  Debt,
+  "id" | "userId" | "transactionId" | "createdAt" | "updatedAt"
+>;
+
 export interface Goal {
   id: number;
   userId: string;

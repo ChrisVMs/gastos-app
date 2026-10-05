@@ -5,6 +5,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   FilterX,
+  Landmark,
+  Lock,
   Pencil,
   Plus,
   Trash2,
@@ -47,7 +49,7 @@ import { deleteTransaction } from "@/lib/db";
 import { useData } from "@/lib/data";
 import { PAYMENT_METHOD_LABELS, TYPE_LABELS } from "@/lib/constants";
 import { formatCurrency, formatDate } from "@/lib/format";
-import type { Transaction, TransactionType } from "@/lib/types";
+import type { Debt, Transaction, TransactionType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TYPE_FILTERS: { value: "all" | TransactionType; label: string }[] = [
@@ -55,6 +57,12 @@ const TYPE_FILTERS: { value: "all" | TransactionType; label: string }[] = [
   { value: "expense", label: "Gastos" },
   { value: "income", label: "Ingresos" },
 ];
+
+function debtLockTitle(debtName?: string): string {
+  return debtName
+    ? `Egreso de la deuda "${debtName}": no se edita ni se elimina aquí, solo desde la sección Deudas.`
+    : "Este movimiento no se edita ni se elimina aquí, solo desde la sección Deudas.";
+}
 
 export default function MovementsPage() {
   const [typeFilter, setTypeFilter] = useState<"all" | TransactionType>("all");
@@ -70,6 +78,28 @@ export default function MovementsPage() {
   const data = useData();
   const transactions = data?.transactions;
   const categories = data?.categories;
+
+  const debtTransactionIds = useMemo(
+    () =>
+      new Set(
+        (data?.debts ?? [])
+          .map((d) => d.transactionId)
+          .filter((id): id is number => id !== null)
+      ),
+    [data?.debts]
+  );
+
+  const debtNamesByTransactionId = useMemo(
+    () =>
+      new Map(
+        (data?.debts ?? [])
+          .filter((d): d is Debt & { transactionId: number } =>
+            d.transactionId !== null
+          )
+          .map((d) => [d.transactionId, d.name])
+      ),
+    [data?.debts]
+  );
 
   const filtered = useMemo(() => {
     return (transactions ?? []).filter((t) => {
@@ -264,13 +294,22 @@ export default function MovementsPage() {
                 <TableBody>
                   {filtered.map((t) => {
                     const category = categoryById.get(t.categoryId);
+                    const isDebt = debtTransactionIds.has(t.id);
                     return (
                       <TableRow key={t.id}>
                         <TableCell>{formatDate(t.date)}</TableCell>
                         <TableCell>
-                          <Badge variant={t.type}>
-                            {TYPE_LABELS[t.type]}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant={t.type}>
+                              {TYPE_LABELS[t.type]}
+                            </Badge>
+                            {isDebt ? (
+                              <Badge variant="secondary">
+                                <Landmark className="mr-1 h-3 w-3" />
+                                Deuda
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell>{category?.name ?? "Sin categoría"}</TableCell>
                         <TableCell className="max-w-48 truncate text-muted-foreground">
@@ -291,28 +330,38 @@ export default function MovementsPage() {
                           {formatCurrency(t.amount)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Editar movimiento"
-                              onClick={() => openEdit(t)}
+                          {isDebt ? (
+                            <span
+                              className="flex items-center justify-end gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
+                              title={debtLockTitle(debtNamesByTransactionId.get(t.id))}
                             >
-                              <Pencil />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Eliminar movimiento"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                setDeleting(t);
-                                setDeletingError("");
-                              }}
-                            >
-                              <Trash2 />
-                            </Button>
-                          </div>
+                              <Lock className="h-3.5 w-3.5" />
+                              Solo desde Deudas
+                            </span>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Editar movimiento"
+                                onClick={() => openEdit(t)}
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Eliminar movimiento"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  setDeleting(t);
+                                  setDeletingError("");
+                                }}
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -327,6 +376,7 @@ export default function MovementsPage() {
               <ul className="divide-y">
                 {filtered.map((t) => {
                   const category = categoryById.get(t.categoryId);
+                  const isDebt = debtTransactionIds.has(t.id);
                   return (
                     <li key={t.id}>
                       <div
@@ -369,26 +419,38 @@ export default function MovementsPage() {
                           {formatCurrency(t.amount)}
                         </span>
                       </div>
-                      <div className="flex justify-end gap-1 px-2 pb-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEdit(t)}
-                        >
-                          <Pencil /> Editar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => {
-                            setDeleting(t);
-                            setDeletingError("");
-                          }}
-                        >
-                          <Trash2 /> Eliminar
-                        </Button>
-                      </div>
+                      {isDebt ? (
+                        <div className="flex justify-end px-2 pb-2">
+                          <span
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                            title={debtLockTitle(debtNamesByTransactionId.get(t.id))}
+                          >
+                            <Lock className="h-3.5 w-3.5" />
+                            Deuda: no editable
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-1 px-2 pb-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEdit(t)}
+                          >
+                            <Pencil /> Editar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setDeleting(t);
+                              setDeletingError("");
+                            }}
+                          >
+                            <Trash2 /> Eliminar
+                          </Button>
+                        </div>
+                      )}
                     </li>
                   );
                 })}

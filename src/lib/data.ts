@@ -4,26 +4,36 @@ import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
-import { getCategories, getGoals, getTransactions } from "@/lib/db";
+import { getCategories, getDebts, getGoals, getTransactions } from "@/lib/db";
 import { subscribe } from "@/lib/refresh";
-import type { Category, Goal, Transaction } from "@/lib/types";
+import type { Category, Debt, Goal, Transaction } from "@/lib/types";
 
 export interface AppData {
   transactions: Transaction[];
   categories: Category[];
   goals: Goal[];
+  debts: Debt[];
 }
 
 export { notifyDataChanged } from "@/lib/refresh";
 
+async function fetchDebts(): Promise<Debt[]> {
+  try {
+    return await getDebts();
+  } catch {
+    return [];
+  }
+}
+
 async function fetchData(): Promise<AppData> {
-  const [transactions, categories, goals] = await Promise.all([
+  const [transactions, categories, goals, debts] = await Promise.all([
     getTransactions(),
     getCategories(),
     getGoals(),
+    fetchDebts(),
   ]);
 
-  return { transactions, categories, goals };
+  return { transactions, categories, goals, debts };
 }
 
 export interface UserState {
@@ -61,7 +71,7 @@ export function useUser(): UserState {
 }
 
 /**
- * Carga en paralelo movimientos, categorías y objetivos del usuario.
+ * Carga en paralelo movimientos, categorías, objetivos y deudas del usuario.
  * Recarga automáticamente al cambiar de usuario y al llamar a `notifyDataChanged`.
  */
 export function useData(): AppData | null {

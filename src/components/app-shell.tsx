@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeftRight,
   BarChart3,
+  Landmark,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/movimientos", label: "Movimientos", icon: ArrowLeftRight },
   { href: "/categorias", label: "Categorías", icon: Tags },
   { href: "/objetivos", label: "Objetivos", icon: Target },
+  { href: "/deudas", label: "Deudas", icon: Landmark },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
 ];
 
