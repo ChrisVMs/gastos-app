@@ -48,7 +48,7 @@ import {
 import { deleteTransaction } from "@/lib/db";
 import { useData } from "@/lib/data";
 import { PAYMENT_METHOD_LABELS, TYPE_LABELS } from "@/lib/constants";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { currentMonthEnd, formatCurrency, formatDate } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -109,8 +109,17 @@ export default function MovementsPage() {
     return map;
   }, [data?.debtInstallments, debtById]);
 
+  const monthEnd = currentMonthEnd();
+
+  const upToCurrentMonth = useMemo(
+    () => (transactions ?? []).filter((t) => t.date <= monthEnd),
+    [transactions, monthEnd]
+  );
+
+  const hiddenProjected = (transactions?.length ?? 0) - upToCurrentMonth.length;
+
   const filtered = useMemo(() => {
-    return (transactions ?? []).filter((t) => {
+    return upToCurrentMonth.filter((t) => {
       if (typeFilter !== "all" && t.type !== typeFilter) return false;
       if (categoryFilter !== "all" && String(t.categoryId) !== categoryFilter)
         return false;
@@ -118,7 +127,7 @@ export default function MovementsPage() {
       if (to && t.date > to) return false;
       return true;
     });
-  }, [transactions, typeFilter, categoryFilter, from, to]);
+  }, [upToCurrentMonth, typeFilter, categoryFilter, from, to]);
 
   const categoryById = useMemo(
     () => new Map((categories ?? []).map((c) => [c.id, c])),
@@ -170,7 +179,7 @@ export default function MovementsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Movimientos</h1>
           <p className="text-sm text-muted-foreground">
-            Registra, edita y filtra tus ingresos y gastos.
+            Registra, edita y filtra tus ingresos y gastos hasta el mes actual.
           </p>
         </div>
         <Button onClick={openNew}>
@@ -258,6 +267,17 @@ export default function MovementsPage() {
             <FilterX /> Limpiar filtros
           </Button>
         </div>
+      ) : null}
+
+      {hiddenProjected > 0 ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Landmark className="h-4 w-4 shrink-0" />
+          {hiddenProjected}{" "}
+          {hiddenProjected === 1
+            ? "cuota futura no se muestra"
+            : "cuotas futuras no se muestran"}{" "}
+          aquí. Revísalas en la sección Deudas.
+        </p>
       ) : null}
 
       {!showCategories ? (

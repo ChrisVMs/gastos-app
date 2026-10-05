@@ -87,6 +87,11 @@ export function monthRange(
   return { start, end };
 }
 
+/** Último día del mes actual como "YYYY-MM-DD". */
+export function currentMonthEnd(): string {
+  return monthRange(currentMonth()).end;
+}
+
 /** "2026-03-12" -> "12/03/2026" */
 export function formatDateShort(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);

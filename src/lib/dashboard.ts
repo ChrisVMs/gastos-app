@@ -1,4 +1,4 @@
-import { daysInMonth, monthRange } from "@/lib/format";
+import { currentMonthEnd, daysInMonth, monthRange } from "@/lib/format";
 import type { Category, Transaction } from "@/lib/types";
 
 export interface MonthSummary {
@@ -107,11 +107,18 @@ export function expenseByCategory(
   return breakdown.sort((a, b) => b.total - a.total);
 }
 
+/**
+ * Movimientos más recientes hasta el final del mes actual.
+ * Excluye los movimientos autogenerados con fecha futura, como las
+ * cuotas de deudas proyectadas a meses siguientes.
+ */
 export function latestTransactions(
   transactions: Transaction[],
   limit: number
 ): Transaction[] {
+  const monthEnd = currentMonthEnd();
   return [...transactions]
+    .filter((t) => t.date <= monthEnd)
     .sort((a, b) => {
       if (a.date !== b.date) return b.date.localeCompare(a.date);
       return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
