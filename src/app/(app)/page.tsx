@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useData } from "@/lib/data";
 import {
   CATEGORY_COLORS,
+  CHART_TOOLTIP_STYLE,
   dailySeries,
   expenseByCategory,
   latestTransactions,
@@ -222,10 +223,7 @@ export default function DashboardPage() {
                         <Tooltip
                           formatter={chartTooltipFormatter}
                           labelFormatter={(label) => `Día ${label}`}
-                          contentStyle={{
-                            borderRadius: 8,
-                            fontSize: 13,
-                          }}
+                          contentStyle={CHART_TOOLTIP_STYLE}
                         />
                         <Area
                           type="monotone"
@@ -289,7 +287,7 @@ export default function DashboardPage() {
                               formatCurrency(value),
                               name,
                             ]}
-                            contentStyle={{ borderRadius: 8, fontSize: 13 }}
+                            contentStyle={CHART_TOOLTIP_STYLE}
                           />
                         </PieChart>
                       </ResponsiveContainer>

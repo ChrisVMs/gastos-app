@@ -1,5 +1,19 @@
+import type { CSSProperties } from "react";
+
 import { currentMonthEnd, daysInMonth, monthRange } from "@/lib/format";
 import type { Category, Transaction } from "@/lib/types";
+
+/** Estilo compartido de los tooltips de Recharts, con los colores del tema. */
+export const CHART_TOOLTIP_STYLE: CSSProperties = {
+  margin: 0,
+  padding: 10,
+  borderRadius: 8,
+  fontSize: 13,
+  whiteSpace: "nowrap",
+  backgroundColor: "hsl(var(--popover))",
+  border: "1px solid hsl(var(--border))",
+  color: "hsl(var(--popover-foreground))",
+};
 
 export interface MonthSummary {
   income: number;

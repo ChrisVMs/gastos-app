@@ -26,6 +26,7 @@ import {
 import { useUser } from "@/lib/data";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -95,7 +96,8 @@ export function SidebarFooter() {
   };
 
   return (
-    <div className="mt-auto border-t pt-4">
+    <div className="mt-auto space-y-1 border-t pt-4">
+      <ThemeToggle />
       <Button
         variant="ghost"
         className="w-full justify-start gap-3 px-3"
@@ -135,6 +137,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </SheetTrigger>
           <Brand />
+          <ThemeToggle compact className="ml-auto" />
         </header>
         <SheetContent side="left" className="flex w-72 flex-col p-4">
           <SheetTitle className="sr-only">Menú</SheetTitle>

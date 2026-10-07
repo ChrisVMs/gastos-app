@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useData } from "@/lib/data";
 import {
   CATEGORY_COLORS,
+  CHART_TOOLTIP_STYLE,
   expenseByCategory,
   percentChange,
   savingsRate,
@@ -258,7 +259,7 @@ export default function ReportesPage() {
                                   formatCurrency(v),
                                   "Gasto",
                                 ]}
-                                contentStyle={{ borderRadius: 8, fontSize: 13 }}
+                                contentStyle={CHART_TOOLTIP_STYLE}
                               />
                               <Bar dataKey="total" radius={[0, 4, 4, 0]}>
                                 {breakdown.map((entry, index) => (
